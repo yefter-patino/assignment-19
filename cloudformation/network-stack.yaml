@@ -1,0 +1,138 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >
+  Assignment 19 - NETWORK nested stack (Yefter).
+  Creates a VPC, an Internet Gateway, two public subnets, and a public route table.
+
+# ---------------------------------------------------------------------------
+# Parameters: nothing is hardcoded. Everything comes in as a parameter so the
+# same template works for dev and prod with different values.
+# ---------------------------------------------------------------------------
+Parameters:
+  EnvironmentName:
+    Type: String
+    AllowedValues:
+      - dev
+      - prod
+    Description: The environment name (dev or prod). Used in resource names.
+
+  VpcCidr:
+    Type: String
+    Default: 10.0.0.0/16
+    Description: CIDR block for the VPC.
+
+  PublicSubnet1Cidr:
+    Type: String
+    Default: 10.0.1.0/24
+    Description: CIDR block for the first public subnet.
+
+  PublicSubnet2Cidr:
+    Type: String
+    Default: 10.0.2.0/24
+    Description: CIDR block for the second public subnet.
+
+Resources:
+  YefterVpc:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: !Ref VpcCidr
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+      Tags:
+        - Key: Name
+          Value: !Sub yefter-${EnvironmentName}-vpc
+        - Key: Owner
+          Value: yefter
+
+  YefterInternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: !Sub yefter-${EnvironmentName}-igw
+        - Key: Owner
+          Value: yefter
+
+  YefterIgwAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref YefterVpc
+      InternetGatewayId: !Ref YefterInternetGateway
+
+  # !Select + !GetAZs picks the first two Availability Zones automatically,
+  # so the AZ names are never hardcoded.
+  YefterPublicSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref YefterVpc
+      CidrBlock: !Ref PublicSubnet1Cidr
+      AvailabilityZone: !Select [0, !GetAZs '']
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: !Sub yefter-${EnvironmentName}-public-subnet-1
+        - Key: Owner
+          Value: yefter
+
+  YefterPublicSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref YefterVpc
+      CidrBlock: !Ref PublicSubnet2Cidr
+      AvailabilityZone: !Select [1, !GetAZs '']
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: !Sub yefter-${EnvironmentName}-public-subnet-2
+        - Key: Owner
+          Value: yefter
+
+  YefterPublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref YefterVpc
+      Tags:
+        - Key: Name
+          Value: !Sub yefter-${EnvironmentName}-public-rt
+        - Key: Owner
+          Value: yefter
+
+  YefterDefaultPublicRoute:
+    Type: AWS::EC2::Route
+    DependsOn: YefterIgwAttachment
+    Properties:
+      RouteTableId: !Ref YefterPublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref YefterInternetGateway
+
+  YefterSubnet1RouteAssoc:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref YefterPublicSubnet1
+      RouteTableId: !Ref YefterPublicRouteTable
+
+  YefterSubnet2RouteAssoc:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref YefterPublicSubnet2
+      RouteTableId: !Ref YefterPublicRouteTable
+
+# ---------------------------------------------------------------------------
+# Outputs: these values are read by the PARENT stack and passed into the
+# security and compute stacks. This is how nested stacks share data.
+# ---------------------------------------------------------------------------
+Outputs:
+  VpcId:
+    Description: The ID of the VPC.
+    Value: !Ref YefterVpc
+
+  VpcCidr:
+    Description: The CIDR block of the VPC.
+    Value: !Ref VpcCidr
+
+  PublicSubnet1Id:
+    Description: The ID of the first public subnet.
+    Value: !Ref YefterPublicSubnet1
+
+  PublicSubnet2Id:
+    Description: The ID of the second public subnet.
+    Value: !Ref YefterPublicSubnet2

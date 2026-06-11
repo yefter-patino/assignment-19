@@ -1,0 +1,83 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >
+  Assignment 19 - COMPUTE nested stack (Yefter).
+  Launches EC2 instances. The subnet IDs and security group ID come IN from the
+  network and security stacks (passed by the parent stack).
+  Dev  -> 1 instance, t2.micro.
+  Prod -> 2 instances, t3.medium.
+
+Parameters:
+  EnvironmentName:
+    Type: String
+    AllowedValues:
+      - dev
+      - prod
+
+  Subnet1Id:
+    Type: AWS::EC2::Subnet::Id
+    Description: First subnet ID. Passed in from the network stack outputs.
+
+  Subnet2Id:
+    Type: AWS::EC2::Subnet::Id
+    Description: Second subnet ID. Used by the second instance in prod.
+
+  SecurityGroupId:
+    Type: AWS::EC2::SecurityGroup::Id
+    Description: Security group ID. Passed in from the security stack outputs.
+
+  # This looks up the latest Amazon Linux 2023 AMI from AWS Systems Manager.
+  # That way we never hardcode an AMI ID (they change per region and over time).
+  LatestAmiId:
+    Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
+    Default: /aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64
+    Description: Latest Amazon Linux 2023 AMI, looked up automatically.
+
+# ---------------------------------------------------------------------------
+# Conditions: this is how we behave differently in dev vs prod.
+# IsProd is true only when EnvironmentName equals "prod".
+# ---------------------------------------------------------------------------
+Conditions:
+  IsProd: !Equals [!Ref EnvironmentName, prod]
+
+Resources:
+  # First instance: always created.
+  # Instance type is chosen by the IsProd condition: t3.medium in prod, else t2.micro.
+  YefterInstance1:
+    Type: AWS::EC2::Instance
+    Properties:
+      ImageId: !Ref LatestAmiId
+      InstanceType: !If [IsProd, t3.medium, t2.micro]
+      SubnetId: !Ref Subnet1Id
+      SecurityGroupIds:
+        - !Ref SecurityGroupId
+      Tags:
+        - Key: Name
+          Value: !Sub yefter-${EnvironmentName}-instance-1
+        - Key: Owner
+          Value: yefter
+
+  # Second instance: ONLY created in prod (because of the Condition line).
+  YefterInstance2:
+    Type: AWS::EC2::Instance
+    Condition: IsProd
+    Properties:
+      ImageId: !Ref LatestAmiId
+      InstanceType: t3.medium
+      SubnetId: !Ref Subnet2Id
+      SecurityGroupIds:
+        - !Ref SecurityGroupId
+      Tags:
+        - Key: Name
+          Value: !Sub yefter-${EnvironmentName}-instance-2
+        - Key: Owner
+          Value: yefter
+
+Outputs:
+  Instance1Id:
+    Description: The ID of the first EC2 instance.
+    Value: !Ref YefterInstance1
+
+  Instance2Id:
+    Description: The ID of the second EC2 instance (prod only).
+    Condition: IsProd
+    Value: !Ref YefterInstance2

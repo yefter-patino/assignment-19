@@ -1,0 +1,16 @@
+# macOS
+.DS_Store
+
+# Editor
+.vscode/
+*.swp
+
+# Local / temp
+*.tmp
+*-broken.yaml
+/tmp/
+
+# AWS / credentials (never commit these)
+.aws/
+*.pem
+credentials

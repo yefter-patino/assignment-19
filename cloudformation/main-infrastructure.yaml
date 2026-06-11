@@ -1,0 +1,94 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >
+  Assignment 19 - PARENT / MAIN stack (Yefter).
+  Deploys three nested stacks in order: network -> security -> compute.
+  Outputs from one stack are fed in as inputs to the next.
+
+Parameters:
+  EnvironmentName:
+    Type: String
+    AllowedValues:
+      - dev
+      - prod
+    Default: dev
+    Description: The environment to deploy (dev or prod).
+
+  TemplateBaseUrl:
+    Type: String
+    Description: >
+      The S3 base URL where the nested templates were uploaded.
+      Example: https://yefter-cfn-templates-dev-866934333672.s3.us-east-1.amazonaws.com
+      The deploy script sets this for you automatically.
+
+  VpcCidr:
+    Type: String
+    Default: 10.0.0.0/16
+
+  PublicSubnet1Cidr:
+    Type: String
+    Default: 10.0.1.0/24
+
+  PublicSubnet2Cidr:
+    Type: String
+    Default: 10.0.2.0/24
+
+Resources:
+  # 1) Network stack - has no dependencies, so it deploys first.
+  NetworkStack:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: !Sub ${TemplateBaseUrl}/network-stack.yaml
+      Parameters:
+        EnvironmentName: !Ref EnvironmentName
+        VpcCidr: !Ref VpcCidr
+        PublicSubnet1Cidr: !Ref PublicSubnet1Cidr
+        PublicSubnet2Cidr: !Ref PublicSubnet2Cidr
+      Tags:
+        - Key: Owner
+          Value: yefter
+
+  # 2) Security stack - reads the network stack's outputs with !GetAtt below.
+  #    Using !GetAtt NetworkStack.Outputs.* automatically makes CloudFormation
+  #    wait for the network stack first, so no explicit DependsOn is needed.
+  SecurityStack:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: !Sub ${TemplateBaseUrl}/security-stack.yaml
+      Parameters:
+        EnvironmentName: !Ref EnvironmentName
+        VpcId: !GetAtt NetworkStack.Outputs.VpcId
+        VpcCidr: !GetAtt NetworkStack.Outputs.VpcCidr
+      Tags:
+        - Key: Owner
+          Value: yefter
+
+  # 3) Compute stack - reads outputs from BOTH the network stack (subnets) and
+  #    the security stack (security group). Those !GetAtt references make this
+  #    stack wait for both of them, keeping the order: network -> security -> compute.
+  ComputeStack:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: !Sub ${TemplateBaseUrl}/compute-stack.yaml
+      Parameters:
+        EnvironmentName: !Ref EnvironmentName
+        Subnet1Id: !GetAtt NetworkStack.Outputs.PublicSubnet1Id
+        Subnet2Id: !GetAtt NetworkStack.Outputs.PublicSubnet2Id
+        SecurityGroupId: !GetAtt SecurityStack.Outputs.SecurityGroupId
+      Tags:
+        - Key: Owner
+          Value: yefter
+
+# These roll the most useful child-stack outputs up to the parent stack so you
+# can see everything in one place with: aws cloudformation describe-stacks ...
+Outputs:
+  VpcId:
+    Description: VPC created by the network stack.
+    Value: !GetAtt NetworkStack.Outputs.VpcId
+
+  SecurityGroupId:
+    Description: Security group created by the security stack.
+    Value: !GetAtt SecurityStack.Outputs.SecurityGroupId
+
+  Instance1Id:
+    Description: First EC2 instance created by the compute stack.
+    Value: !GetAtt ComputeStack.Outputs.Instance1Id
